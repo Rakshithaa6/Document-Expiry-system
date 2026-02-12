@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TB AI Freshness Intelligence Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .top-controls {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        input, select {
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
+            margin: 5px;
+        }
+
+        .summary {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .summary-box {
+            background: #1e293b;
+            padding: 15px 25px;
+            border-radius: 10px;
+            margin: 5px;
+            text-align: center;
+            min-width: 150px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            transition: transform 0.2s ease;
+        }
+
+        .card:hover {
+            transform: scale(1.02);
+        }
+
+        .status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+
+        .SAFE { background: #16a34a; }
+        .RISKY { background: #f59e0b; }
+        .EXPIRED { background: #dc2626; }
+
+        .progress-bar {
+            background: #334155;
+            border-radius: 20px;
+            overflow: hidden;
+            height: 12px;
+            margin: 10px 0;
+        }
+
+        .progress {
+            height: 100%;
+            text-align: right;
+            padding-right: 5px;
+            font-size: 10px;
+            line-height: 12px;
+        }
+
+        button {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            background: #3b82f6;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        canvas {
+            margin-top: 30px;
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>🧠 TB AI Data Freshness Intelligence Dashboard</h1>
+
+<div class="top-controls">
+    <div>
+        <input type="text" id="search" placeholder="Search state...">
+        <select id="sort">
+            <option value="none">Sort By</option>
+            <option value="score">Freshness Score</option>
+            <option value="status">Status</option>
+        </select>
+    </div>
+    <div>
+        <button onclick="refreshData()">🔄 Refresh</button>
+    </div>
+</div>
+
+<div class="summary">
+    <div class="summary-box" id="totalDocs">Total: 0</div>
+    <div class="summary-box" style="color:#16a34a" id="safeCount">SAFE: 0</div>
+    <div class="summary-box" style="color:#f59e0b" id="riskyCount">RISKY: 0</div>
+    <div class="summary-box" style="color:#dc2626" id="expiredCount">EXPIRED: 0</div>
+</div>
+
+<canvas id="chart" height="150"></canvas>
+
+<div class="container" id="app">
+    Loading...
+</div>
+
+<script>
+
+let globalData = [];
+
+function fetchData() {
+    fetch("http://127.0.0.1:8000/documents")
+    .then(res => res.json())
+    .then(data => {
+        globalData = data;
+        render(data);
+        drawChart(data);
+    })
+    .catch(() => {
+        document.getElementById("app").innerHTML =
+            "<p style='color:red'>Backend not running.</p>";
+    });
+}
+
+function render(data) {
+    const container = document.getElementById("app");
+    container.innerHTML = "";
+
+    let safe = 0, risky = 0, expired = 0;
+
+    data.forEach(doc => {
+
+        if(doc.status === "SAFE") safe++;
+        if(doc.status === "RISKY") risky++;
+        if(doc.status === "EXPIRED") expired++;
+
+        let color =
+            doc.status === "SAFE" ? "#16a34a" :
+            doc.status === "RISKY" ? "#f59e0b" :
+            "#dc2626";
+
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `
+            <h3>${doc.title}</h3>
+            <p><strong>Total Notifications:</strong> ${doc.notifications_total}</p>
+            <span class="status ${doc.status}">${doc.status}</span>
+
+            <div class="progress-bar">
+                <div class="progress"
+                     style="width:${doc.freshness_score}%; background:${color}">
+                     ${doc.freshness_score}%
+                </div>
+            </div>
+
+            <p>${doc.explanation}</p>
+
+            <button onclick="verify(${doc.id})">Verify Document</button>
+        `;
+
+        container.appendChild(div);
+    });
+
+    document.getElementById("totalDocs").innerText = "Total: " + data.length;
+    document.getElementById("safeCount").innerText = "SAFE: " + safe;
+    document.getElementById("riskyCount").innerText = "RISKY: " + risky;
+    document.getElementById("expiredCount").innerText = "EXPIRED: " + expired;
+}
+
+function drawChart(data) {
+    const canvas = document.getElementById("chart");
+    const ctx = canvas.getContext("2d");
+
+    let safe = data.filter(d => d.status === "SAFE").length;
+    let risky = data.filter(d => d.status === "RISKY").length;
+    let expired = data.filter(d => d.status === "EXPIRED").length;
+
+    let total = safe + risky + expired;
+    let start = 0;
+
+    const colors = ["#16a34a", "#f59e0b", "#dc2626"];
+    const values = [safe, risky, expired];
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    values.forEach((val, i) => {
+        let slice = (val / total) * 2 * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(150, 75);
+        ctx.arc(150, 75, 70, start, start + slice);
+        ctx.fillStyle = colors[i];
+        ctx.fill();
+        start += slice;
+    });
+}
+
+function verify(id) {
+    fetch("http://127.0.0.1:8000/documents/" + id + "/use", {
+        method: "POST"
+    })
+    .then(res => res.json())
+    .then(data => alert(JSON.stringify(data)))
+    .catch(() => alert("Blocked or expired"));
+}
+
+function refreshData() {
+    fetchData();
+}
+
+document.getElementById("search").addEventListener("input", function() {
+    let term = this.value.toLowerCase();
+    let filtered = globalData.filter(d =>
+        d.title.toLowerCase().includes(term)
+    );
+    render(filtered);
+});
+
+document.getElementById("sort").addEventListener("change", function() {
+    let value = this.value;
+    let sorted = [...globalData];
+
+    if(value === "score")
+        sorted.sort((a,b) => b.freshness_score - a.freshness_score);
+
+    if(value === "status")
+        sorted.sort((a,b) => a.status.localeCompare(b.status));
+
+    render(sorted);
+});
+
+fetchData();
+setInterval(fetchData, 30000);
+
+</script>
+
+</body>
+</html>
